@@ -3,6 +3,7 @@ import torch
 from scipy import ndimage as nd  
 import torch.nn.parallel
 from torch.autograd import Variable
+from tqdm import tqdm
 
 def Generator_multichannels(image, sizeofchunk, sizeofchunk_expand,numofchannels): 
     sizeofimage = np.shape(image)[1:4]
@@ -63,7 +64,7 @@ def Chunks_Image(segment_chunks, nb_chunks, sizeofchunk, sizeofchunk_expand, idx
 def BreastSeg(image,scale_subject,model,opt):
     modelpath = "Models/"       
     modelname = modelpath+"model_breast.pth"  
-    checkpoint = torch.load(modelname, map_location=torch.device('cpu'))
+    checkpoint = torch.load(modelname, map_location=torch.device('cuda:2'))
     model.load_state_dict(checkpoint)
 
 
@@ -85,16 +86,18 @@ def BreastSeg(image,scale_subject,model,opt):
     image_one = np.zeros((1,imagesize[0],imagesize[1],imagesize[2]),dtype='float32')
     image_one[0,...] =image 
     chunk_batch, nb_chunks, idx_xyz, sizeofimage = Generator_multichannels(image_one,sizeofchunk,sizeofchunk_expand,1)
+    model = model.to(torch.device('cuda:2'))
 
-    seg_batch = np.zeros((np.size(chunk_batch,0),numofseg,sizeofchunk,sizeofchunk,sizeofchunk),dtype='float32')
-    for i_chunk in range(np.size(chunk_batch,0)):
-        input = Variable(torch.from_numpy(chunk_batch[i_chunk:i_chunk+1,...]),volatile=True)
-        model.eval()
-        if opt.cuda:
-            input = input.cuda()
-        prediction = model(input)   
-        
-        seg_batch[i_chunk,0,...] = (prediction.data).cpu().numpy()
+    with torch.no_grad():
+        seg_batch = np.zeros((np.size(chunk_batch,0),numofseg,sizeofchunk,sizeofchunk,sizeofchunk),dtype='float32')
+        for i_chunk in range(np.size(chunk_batch,0)):
+            input = Variable(torch.from_numpy(chunk_batch[i_chunk:i_chunk+1,...]),volatile=True)
+            model.eval()
+            if opt.cuda:
+                input = input.to(torch.device('cuda:2'))
+            prediction = model(input)   
+            
+            seg_batch[i_chunk,0,...] = (prediction.data).cpu().numpy()
         
     
     for i_seg in range(numofseg):
@@ -159,19 +162,23 @@ def BreastTumor(image_sub,image_post,image_mask,scale_subject,model1st,model2nd,
     chunk_batch, nb_chunks, idx_xyz, sizeofimage = Generator_multichannels(image_one,sizeofchunk,sizeofchunk_expand,3)
 
     seg_batch = np.zeros((np.size(chunk_batch,0),numofseg,sizeofchunk,sizeofchunk,sizeofchunk),dtype='float32')
-    for i_chunk in range(np.size(chunk_batch,0)):
-        input = Variable(torch.from_numpy(chunk_batch[i_chunk:i_chunk+1,...]),volatile=True)
-        model1st.eval()
-        if opt.cuda:
-            input = input.cuda()
-        prediction = model1st(input)   
-        
-        seg_batch[i_chunk,0,...] = (prediction.data).cpu().numpy()
+    model1st = model1st.to(torch.device('cuda:2'))
+
+    with torch.no_grad():
+        for i_chunk in tqdm(range(np.size(chunk_batch,0))):
+            input = Variable(torch.from_numpy(chunk_batch[i_chunk:i_chunk+1,...]),volatile=True)
+            model1st.eval()
+            if opt.cuda:
+                input = input.to(torch.device('cuda:2'))
+
+            prediction = model1st(input)   
+            
+            seg_batch[i_chunk,0,...] = (prediction.data).cpu().numpy()
         
     
-    for i_seg in range(numofseg):
-        prob_image = Chunks_Image(seg_batch[:,i_seg:i_seg+1,...], nb_chunks, sizeofchunk, sizeofchunk_expand, idx_xyz, sizeofimage)
-        prob_image[prob_image<0.01] =0
+        for i_seg in tqdm(range(numofseg)):
+            prob_image = Chunks_Image(seg_batch[:,i_seg:i_seg+1,...], nb_chunks, sizeofchunk, sizeofchunk_expand, idx_xyz, sizeofimage)
+            prob_image[prob_image<0.01] =0
 
     image_one[2,...] = prob_image
 # Just for saving output of 1st stage             
@@ -187,34 +194,36 @@ def BreastTumor(image_sub,image_post,image_mask,scale_subject,model1st,model2nd,
     del model1st           
     modelname = modelpath+"/model_tumor_2nd.pth"  
     checkpoint = torch.load(modelname)
-    model2nd.load_state_dict(checkpoint)             
+    model2nd.load_state_dict(checkpoint)
+    model2nd.to(torch.device('cuda:2'))             
              
              
     chunk_batch, nb_chunks, idx_xyz, sizeofimage = Generator_multichannels(image_one,sizeofchunk,sizeofchunk_expand,3)
 
     seg_batch = np.zeros((np.size(chunk_batch,0),numofseg,sizeofchunk,sizeofchunk,sizeofchunk),dtype='float32')
-    for i_chunk in range(np.size(chunk_batch,0)):
-        input = Variable(torch.from_numpy(chunk_batch[i_chunk:i_chunk+1,...]),volatile=True)
-        model2nd.eval()
-        if opt.cuda:
-            input = input.cuda()
-        prediction = model2nd(input)   
+    with torch.no_grad():
+        for i_chunk in tqdm( range(np.size(chunk_batch,0))):
+            input = Variable(torch.from_numpy(chunk_batch[i_chunk:i_chunk+1,...]),volatile=True)
+            model2nd.eval()
+            if opt.cuda:
+                input = input.to(torch.device('cuda:2'))
+            prediction = model2nd(input)   
+            
+            seg_batch[i_chunk,0,...] = (prediction.data).cpu().numpy()
+            
         
-        seg_batch[i_chunk,0,...] = (prediction.data).cpu().numpy()
-        
-    
-    for i_seg in range(numofseg):
-        prob_image = Chunks_Image(seg_batch[:,i_seg:i_seg+1,...], nb_chunks, sizeofchunk, sizeofchunk_expand, idx_xyz, sizeofimage)
-        up_image = nd.interpolation.zoom(prob_image,1/scale_subject,order=1)
-        up_image_norm = np.zeros(imageshape,dtype='float32')
-        temp_image = up_image[0:imageshape[0],0:imageshape[1],0:imageshape[2]]
-        shape_tempimage =np.shape(temp_image)
-        up_image_norm[0:shape_tempimage[0],0:shape_tempimage[1],0:shape_tempimage[2]] = temp_image
-        threshold = 0.5
-        idx = up_image_norm > threshold
-        up_image_norm[idx] = 1
-        up_image_norm[~idx] = 0               
-        seg_img = up_image_norm.astype('uint8')           
+        for i_seg in range(numofseg):
+            prob_image = Chunks_Image(seg_batch[:,i_seg:i_seg+1,...], nb_chunks, sizeofchunk, sizeofchunk_expand, idx_xyz, sizeofimage)
+            up_image = nd.interpolation.zoom(prob_image,1/scale_subject,order=1)
+            up_image_norm = np.zeros(imageshape,dtype='float32')
+            temp_image = up_image[0:imageshape[0],0:imageshape[1],0:imageshape[2]]
+            shape_tempimage =np.shape(temp_image)
+            up_image_norm[0:shape_tempimage[0],0:shape_tempimage[1],0:shape_tempimage[2]] = temp_image
+            threshold = 0.5
+            idx = up_image_norm > threshold
+            up_image_norm[idx] = 1
+            up_image_norm[~idx] = 0               
+            seg_img = up_image_norm.astype('uint8')           
     return prob_output,seg_img
 
 
