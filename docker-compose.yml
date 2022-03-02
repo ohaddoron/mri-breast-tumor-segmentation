@@ -1,0 +1,10 @@
+version: '3.4'
+
+services:
+  mribreasttumorsegmentation:
+    image: mribreasttumorsegmentation
+    build:
+      context: .
+      dockerfile: ./Dockerfile
+    volumes:
+      - /home/ohad/Projects/mri-breast-tumor-segmentation:/home

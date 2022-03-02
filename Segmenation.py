@@ -59,11 +59,11 @@ def Chunks_Image(segment_chunks, nb_chunks, sizeofchunk, sizeofchunk_expand, idx
     return segment_image
 
 
-
+@torch.no_grad()
 def BreastSeg(image,scale_subject,model,opt):
     modelpath = "Models/"       
     modelname = modelpath+"model_breast.pth"  
-    checkpoint = torch.load(modelname)
+    checkpoint = torch.load(modelname, map_location=torch.device('cpu'))
     model.load_state_dict(checkpoint)
 
 

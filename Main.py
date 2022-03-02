@@ -15,7 +15,7 @@ except AttributeError:
     
     
 parser = argparse.ArgumentParser(description='Tumor Segmentation from DCE-MRI')
-parser.add_argument('--cuda', type=int, default='1', required=False, help='Run in GPU')
+parser.add_argument('--cuda', type=int, default='0', required=False, help='Run in GPU')
 parser.add_argument('--pre', type=str, default='Data/Img1_pre.nii.gz', required=False, help='Image path for pre-constrast image')
 parser.add_argument('--post', type=str, default='Data/Img1_post.nii.gz', required=False, help='Image path for post-constrast image')
 parser.add_argument('--outfolder',type=str,default='Results',required=False,help='Folder for saving results')
